@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台灣股市資料查詢</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1e2530;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.15);
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --text3: #6e7681;
+    --red: #f85149;
+    --green: #3fb950;
+    --blue: #58a6ff;
+    --orange: #f0883e;
+    --accent: #f85149;
+    --accent-dim: rgba(248,81,73,0.12);
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 14px; min-height: 100vh; }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; color: var(--text); }
+  .logo-icon { width: 28px; height: 28px; background: var(--accent); border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+  .logo-icon svg { width: 16px; height: 16px; fill: white; }
+  .badge { font-size: 11px; color: var(--text3); background: var(--surface2); border: 1px solid var(--border); padding: 2px 8px; border-radius: 20px; }
+
+  .layout { display: grid; grid-template-columns: 260px 1fr; gap: 0; min-height: calc(100vh - 57px); }
+
+  aside {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .panel-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); margin-bottom: 10px; }
+
+  label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 5px; }
+  input[type="text"], input[type="date"] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+  .form-group { display: flex; flex-direction: column; gap: 12px; }
+
+  .btn {
+    width: 100%;
+    padding: 9px 0;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: opacity 0.15s, transform 0.1s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border2); }
+  .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+
+  .quick-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .btn-quick { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); border-radius: 5px; padding: 5px; font-size: 11px; cursor: pointer; transition: all 0.15s; text-align: center; }
+  .btn-quick:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-quick.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+  .cache-info { font-size: 11px; color: var(--text3); background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; line-height: 1.5; }
+  .cache-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 5px; }
+
+  main { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; overflow-x: hidden; }
+
+  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .metric-label { font-size: 11px; color: var(--text3); margin-bottom: 6px; font-weight: 500; }
+  .metric-value { font-size: 20px; font-weight: 600; color: var(--text); line-height: 1; }
+  .metric-value.up { color: var(--red); }
+  .metric-value.down { color: var(--green); }
+  .metric-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .chart-title { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .chart-title-dot { width: 3px; height: 14px; border-radius: 2px; }
+  .chart-wrap { position: relative; height: 280px; }
+
+  .legend-row { display: flex; gap: 16px; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text3); }
+  .legend-line { width: 16px; height: 2px; border-radius: 1px; }
+
+  .table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .table-header-row { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .table-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .btn-download { background: transparent; border: 1px solid var(--border2); color: var(--text2); border-radius: 5px; padding: 5px 12px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.15s; }
+  .btn-download:hover { border-color: var(--green); color: var(--green); }
+
+  .data-table { width: 100%; border-collapse: collapse; }
+  .data-table th { font-size: 11px; font-weight: 600; color: var(--text3); text-align: left; padding: 10px 16px; background: var(--surface2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .data-table td { padding: 9px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .td-date { color: var(--text); font-weight: 500; }
+  .td-up { color: var(--red); font-weight: 600; }
+  .td-down { color: var(--green); font-weight: 600; }
+  .td-ma5 { color: var(--orange); }
+  .td-ma20 { color: var(--blue); }
+
+  .state-box { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 40px; color: var(--text3); }
+  .state-box svg { width: 36px; height: 36px; opacity: 0.4; }
+  .state-box p { font-size: 13px; }
+
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-overlay { display: none; position: absolute; inset: 0; background: rgba(13,17,23,0.6); border-radius: 6px; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
+  .loading-overlay.visible { display: flex; }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--text); transform: translateY(80px); opacity: 0; transition: all 0.25s; z-index: 999; max-width: 280px; }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.error { border-color: var(--red); }
+  .toast.success { border-color: var(--green); }
+
+  .source-tag { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 500; }
+  .source-twse { background: rgba(63,185,80,0.15); color: var(--green); }
+  .source-mock { background: rgba(248,81,73,0.15); color: var(--red); }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { border-right: none; border-bottom: 1px solid var(--border); }
+    .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24"><path d="M3 17l4-8 4 4 4-6 4 10H3z"/></svg>
+    </div>
+    台灣股市查詢
+  </div>
+  <span class="badge">TWSE 即時資料</span>
+</header>
+
+<div class="layout">
+  <aside>
+    <div>
+      <p class="panel-title">查詢條件</p>
+      <div class="form-group">
+        <div>
+          <label>股票代號</label>
+          <input type="text" id="stockCode" value="2330" placeholder="例：2330、0050" maxlength="6">
+        </div>
+        <div>
+          <label>快速選擇區間</label>
+          <div class="quick-dates">
+            <div class="btn-quick" data-days="30">近 30 天</div>
+            <div class="btn-quick active" data-days="90">近 90 天</div>
+            <div class="btn-quick" data-days="180">近 180 天</div>
+            <div class="btn-quick" data-days="365">近 1 年</div>
+          </div>
+        </div>
+        <div>
+          <label>起始日期</label>
+          <input type="date" id="startDate">
+        </div>
+        <div>
+          <label>結束日期</label>
+          <input type="date" id="endDate">
+        </div>
+        <button class="btn btn-primary" id="btnQuery">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          查詢
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <p class="panel-title">快取</p>
+      <div class="cache-info" id="cacheInfo">
+        <span class="cache-dot"></span> 無快取資料
+      </div>
+      <button class="btn btn-ghost" style="margin-top:8px" id="btnClearCache">清除快取</button>
+    </div>
+
+    <div>
+      <p class="panel-title">資料說明</p>
+      <div class="cache-info" style="line-height:1.6">
+        資料源：臺灣證券交易所 (TWSE) 公開資訊。<br>
+        台股慣例：<span style="color:var(--red)">紅色=漲</span>，<span style="color:var(--green)">綠色=跌</span>。<br>
+        MA5/MA20 由收盤價計算。
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">股票</div>
+        <div class="metric-value" id="mStock" style="font-size:18px">—</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">最新收盤價</div>
+        <div class="metric-value" id="mPrice">—</div>
+        <div class="metric-sub" id="mChange"></div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">查詢區間</div>
+        <div class="metric-value" id="mRange" style="font-size:12px;margin-top:4px">—</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">資料來源</div>
+        <div class="metric-value" id="mSource" style="font-size:13px;margin-top:4px">—</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">
+          <div class="chart-title-dot" style="background:var(--accent)"></div>
+          K 線 ／ 均線
+        </div>
+        <div class="legend-row">
+          <div class="legend-item"><div class="legend-line" style="background:var(--orange)"></div>MA5</div>
+          <div class="legend-item"><div class="legend-line" style="background:var(--blue)"></div>MA20</div>
+          <div class="legend-item"><div class="legend-line" style="background:var(--red)"></div>漲</div>
+          <div class="legend-item"><div class="legend-line" style="background:var(--green)"></div>跌</div>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="priceChart"></canvas>
+        <div class="loading-overlay" id="priceLoading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">
+          <div class="chart-title-dot" style="background:var(--orange)"></div>
+          成交量（張）
+        </div>
+      </div>
+      <div class="chart-wrap" style="height:180px">
+        <canvas id="volumeChart"></canvas>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header-row">
+        <span class="table-title">近期交易資料（最近 30 筆）</span>
+        <button class="btn-download" id="btnDownload">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下載 CSV
+        </button>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>日期</th><th>開盤</th><th>最高</th><th>最低</th><th>收盤</th><th>漲跌</th><th>成交量(張)</th><th>MA5</th><th>MA20</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr><td colspan="9"><div class="state-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 0-2 2h-2a2 2 0 0 1-2-2z"/></svg>
+              <p>輸入代號後點擊查詢</p>
+            </div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CACHE_PREFIX = 'twstock_';
+const CACHE_TTL = 15 * 60 * 1000; // 15 分鐘
+
+let priceChartObj = null, volChartObj = null;
+let currentData = [];
+let activeQuickDays = 90;
+
+// 初始化日期
+function setDateRange(days) {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - days);
+  document.getElementById('endDate').value = end.toISOString().split('T')[0];
+  document.getElementById('startDate').value = start.toISOString().split('T')[0];
+  activeQuickDays = days;
+  document.querySelectorAll('.btn-quick').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.days) === days);
+  });
+}
+
+setDateRange(90);
+
+document.querySelectorAll('.btn-quick').forEach(btn => {
+  btn.addEventListener('click', () => {
+    setDateRange(parseInt(btn.dataset.days));
+  });
+});
+
+document.getElementById('startDate').addEventListener('change', () => {
+  document.querySelectorAll('.btn-quick').forEach(b => b.classList.remove('active'));
+});
+
+// 快取管理
+function getCached(key) {
+  try {
+    const raw = sessionStorage.getItem(CACHE_PREFIX + key);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL) { sessionStorage.removeItem(CACHE_PREFIX + key); return null; }
+    return data;
+  } catch { return null; }
+}
+function setCache(key, data) {
+  try { sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ data, ts: Date.now() })); } catch {}
+}
+function clearCache() {
+  Object.keys(sessionStorage).filter(k => k.startsWith(CACHE_PREFIX)).forEach(k => sessionStorage.removeItem(k));
+}
+function updateCacheInfo() {
+  const keys = Object.keys(sessionStorage).filter(k => k.startsWith(CACHE_PREFIX));
+  const el = document.getElementById('cacheInfo');
+  if (keys.length === 0) {
+    el.innerHTML = '<span class="cache-dot" style="background:var(--text3)"></span> 無快取資料';
+  } else {
+    el.innerHTML = `<span class="cache-dot"></span> 已快取 ${keys.length} 筆查詢（15 分鐘有效）`;
+  }
+}
+
+document.getElementById('btnClearCache').addEventListener('click', () => {
+  clearCache(); updateCacheInfo(); showToast('快取已清除', 'success');
+});
+
+// Toast 通知
+function showToast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + type;
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// TWSE API 請求 (真實公開資料)
+async function fetchTWSEData(stockCode, startDate, endDate) {
+  const cacheKey = `${stockCode}_${startDate}_${endDate}`;
+  const cached = getCached(cacheKey);
+  if (cached) {
+    showToast('從快取載入資料', 'success');
+    return { data: cached, source: 'cache' };
+  }
+
+  // 依月份分批請求 TWSE 歷史資料
+  const allRecords = [];
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  
+  let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cursor <= end) {
+    const yyyymm = `${cursor.getFullYear()}${String(cursor.getMonth()+1).padStart(2,'0')}01`;
+    const url = `https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date=${yyyymm}&stockNo=${stockCode}&response=json&_=${Date.now()}`;
+    
+    try {
+      const resp = await fetch(url);
+      const json = await resp.json();
+      if (json.stat === 'OK' && json.data) {
+        allRecords.push(...json.data);
+      }
+    } catch (e) {
+      // 若 API 失敗，跳過該月
+    }
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  if (allRecords.length === 0) return null;
+
+  // 解析 TWSE 格式：[民國日期, 成交股數, 成交金額, 開盤, 最高, 最低, 收盤, 漲跌, 成交筆數]
+  const parsed = allRecords.map(row => {
+    const dateParts = row[0].replace(/\//g, '-').split('-');
+    const year = parseInt(dateParts[0]) + 1911;
+    const isoDate = `${year}-${dateParts[1].padStart(2,'0')}-${dateParts[2].padStart(2,'0')}`;
+    const toNum = s => parseFloat(s.replace(/,/g, '')) || 0;
+    const vol = Math.round(toNum(row[1]) / 1000); // 股轉張
+    const open = toNum(row[3]);
+    const high = toNum(row[4]);
+    const low  = toNum(row[5]);
+    const close = toNum(row[6]);
+    const change = toNum(row[7].replace(/[▲▼+−]/g, s => s === '▲' || s === '+' ? '' : '-').trim());
+    if (!open || !close) return null;
+    return { date: isoDate, open, high, low, close, volume: vol, change };
+  }).filter(Boolean);
+
+  // 篩選日期範圍
+  const filtered = parsed.filter(d => d.date >= startDate && d.date <= endDate)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // 計算 MA5 / MA20
+  filtered.forEach((d, i) => {
+    d.ma5 = i >= 4 ? filtered.slice(i-4, i+1).reduce((s,r) => s + r.close, 0) / 5 : null;
+    d.ma20 = i >= 19 ? filtered.slice(i-19, i+1).reduce((s,r) => s + r.close, 0) / 20 : null;
+  });
+
+  if (filtered.length > 0) {
+    setCache(cacheKey, filtered);
+    updateCacheInfo();
+  }
+
+  return { data: filtered, source: 'TWSE' };
+}
+
+// 備援：產生模擬資料（當 API 不可用時使用）
+function generateFallback(stockCode, startDate, endDate) {
+  const list = [];
+  let cur = new Date(startDate);
+  const end = new Date(endDate);
+  let base = (parseInt(stockCode) % 500) + 80;
+  if (isNaN(base) || base < 50) base = 350;
+
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) {
+      const chg = (Math.random() - 0.48) * base * 0.03;
+      const open = +(base + (Math.random()-.5)*3).toFixed(2);
+      const close = +(open + chg).toFixed(2);
+      const high = +(Math.max(open, close) + Math.random()*2).toFixed(2);
+      const low  = +(Math.min(open, close) - Math.random()*2).toFixed(2);
+      const volume = Math.floor(Math.random() * 30000) + 1000;
+      list.push({ date: cur.toISOString().split('T')[0], open, high, low, close, volume, change: +(close-open).toFixed(2) });
+      base = close;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  list.forEach((d, i) => {
+    d.ma5 = i >= 4 ? list.slice(i-4, i+1).reduce((s,r) => s+r.close, 0)/5 : null;
+    d.ma20 = i >= 19 ? list.slice(i-19, i+1).reduce((s,r) => s+r.close, 0)/20 : null;
+  });
+  return list;
+}
+
+// 主查詢
+async function doQuery() {
+  const stockCode = document.getElementById('stockCode').value.trim();
+  const startDate = document.getElementById('startDate').value;
+  const endDate   = document.getElementById('endDate').value;
+
+  if (!stockCode) { showToast('請輸入股票代號', 'error'); return; }
+  if (!startDate || !endDate) { showToast('請選擇日期區間', 'error'); return; }
+  const dStart = new Date(startDate), dEnd = new Date(endDate);
+  if (dStart > dEnd) { showToast('起始日期不能晚於結束日期', 'error'); return; }
+  if ((dEnd - dStart) / 86400000 > 365) { showToast('查詢區間不可超過 365 天', 'error'); return; }
+
+  const btn = document.getElementById('btnQuery');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:14px;height:14px"></div> 查詢中...';
+  document.getElementById('priceLoading').classList.add('visible');
+
+  let data = [], source = 'mock';
+
+  try {
+    const result = await fetchTWSEData(stockCode, startDate, endDate);
+    if (result && result.data.length > 0) {
+      data = result.data;
+      source = result.source === 'cache' ? 'Cache' : 'TWSE';
+    } else {
+      data = generateFallback(stockCode, startDate, endDate);
+      source = '模擬 (API 不可用)';
+      showToast('TWSE API 無資料，顯示模擬資料', 'error');
+    }
+  } catch {
+    data = generateFallback(stockCode, startDate, endDate);
+    source = '模擬 (備援)';
+    showToast('網路錯誤，顯示模擬資料', 'error');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> 查詢';
+  document.getElementById('priceLoading').classList.remove('visible');
+
+  if (data.length === 0) { showToast('查無資料，請確認股票代號', 'error'); return; }
+
+  currentData = data;
+  renderMetrics(stockCode, data, source, startDate, endDate);
+  renderPriceChart(data);
+  renderVolumeChart(data);
+  renderTable(data);
+}
+
+function renderMetrics(code, data, source, startDate, endDate) {
+  const last = data[data.length - 1];
+  const prev = data.length > 1 ? data[data.length - 2] : null;
+  const chg = prev ? last.close - prev.close : last.change || 0;
+  const chgPct = prev ? (chg / prev.close * 100) : 0;
+  const isUp = chg >= 0;
+
+  document.getElementById('mStock').textContent = code;
+  document.getElementById('mPrice').textContent = last.close.toFixed(2);
+  document.getElementById('mPrice').className = 'metric-value ' + (isUp ? 'up' : 'down');
+  document.getElementById('mChange').textContent = `${isUp?'▲':'▼'} ${Math.abs(chg).toFixed(2)} (${Math.abs(chgPct).toFixed(2)}%)`;
+  document.getElementById('mChange').style.color = isUp ? 'var(--red)' : 'var(--green)';
+  document.getElementById('mRange').textContent = `${startDate} ~ ${endDate}`;
+  const srcTag = source.includes('TWSE') || source.includes('Cache') ? 'source-twse' : 'source-mock';
+  document.getElementById('mSource').innerHTML = `<span class="source-tag ${srcTag}">${source}</span>`;
+}
+
+function renderPriceChart(data) {
+  if (priceChartObj) priceChartObj.destroy();
+  const ctx = document.getElementById('priceChart').getContext('2d');
+
+  const labels = data.map(d => d.date);
+  const opens = data.map(d => d.open);
+  const closes = data.map(d => d.close);
+  const highs = data.map(d => d.high);
+  const lows = data.map(d => d.low);
+  const ma5 = data.map(d => d.ma5);
+  const ma20 = data.map(d => d.ma20);
+
+  // 自製 K 線 plugin（不依賴 financial 套件）
+  const candlestickPlugin = {
+    id: 'candlestick',
+    afterDatasetsDraw(chart) {
+      const { ctx, scales: { x, y } } = chart;
+      data.forEach((d, i) => {
+        const xPos = x.getPixelForValue(i);
+        const openY = y.getPixelForValue(d.open);
+        const closeY = y.getPixelForValue(d.close);
+        const highY = y.getPixelForValue(d.high);
+        const lowY = y.getPixelForValue(d.low);
+        const isUp = d.close >= d.open;
+        const color = isUp ? '#f85149' : '#3fb950';
+        const w = Math.max(Math.floor((x.getPixelForValue(1) - x.getPixelForValue(0)) * 0.7), 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(xPos, highY);
+        ctx.lineTo(xPos, lowY);
+        ctx.stroke();
+        ctx.fillStyle = color;
+        const bodyTop = Math.min(openY, closeY);
+        const bodyH = Math.max(Math.abs(closeY - openY), 1);
+        ctx.fillRect(xPos - w/2, bodyTop, w, bodyH);
+      });
+    }
+  };
+
+  priceChartObj = new Chart(ctx, {
+    type: 'line',
+    plugins: [candlestickPlugin],
+    data: {
+      labels,
+      datasets: [
+        { label: 'MA5', data: ma5, borderColor: '#f0883e', borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [4,3] },
+        { label: 'MA20', data: ma20, borderColor: '#58a6ff', borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [6,4] },
+        { label: '收盤', data: closes, borderColor: 'transparent', pointRadius: 0, fill: false }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: {
+          ticks: { color: '#6e7681', maxTicksLimit: 8, font: { size: 11 } },
+          grid: { color: 'rgba(255,255,255,0.04)' }
+        },
+        y: {
+          position: 'right',
+          ticks: { color: '#6e7681', font: { size: 11 } },
+          grid: { color: 'rgba(255,255,255,0.04)' }
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e2530',
+          titleColor: '#8b949e',
+          bodyColor: '#e6edf3',
+          borderColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 1,
+          padding: 10,
+          callbacks: {
+            title: items => data[items[0].dataIndex].date,
+            beforeBody: items => {
+              const d = data[items[0].dataIndex];
+              return [`開 ${d.open.toFixed(2)}  高 ${d.high.toFixed(2)}`, `低 ${d.low.toFixed(2)}  收 ${d.close.toFixed(2)}`];
+            },
+            label: () => ''
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderVolumeChart(data) {
+  if (volChartObj) volChartObj.destroy();
+  const ctx = document.getElementById('volumeChart').getContext('2d');
+  volChartObj = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.date),
+      datasets: [{
+        data: data.map(d => d.volume),
+        backgroundColor: data.map(d => d.close >= d.open ? 'rgba(248,81,73,0.7)' : 'rgba(63,185,80,0.7)'),
+        borderRadius: 1
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      scales: {
+        x: { ticks: { display: false }, grid: { display: false } },
+        y: { position: 'right', ticks: { color: '#6e7681', font: { size: 11 }, callback: v => v >= 10000 ? (v/10000).toFixed(1)+'萬' : v }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      },
+      plugins: { legend: { display: false }, tooltip: {
+        backgroundColor: '#1e2530', titleColor: '#8b949e', bodyColor: '#e6edf3',
+        borderColor: 'rgba(255,255,255,0.12)', borderWidth: 1,
+        callbacks: { label: item => `成交量：${item.raw.toLocaleString()} 張` }
+      }}
+    }
+  });
+}
+
+function renderTable(data) {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  const rows = [...data].reverse().slice(0, 30);
+  rows.forEach(d => {
+    const isUp = d.close >= d.open;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="td-date">${d.date}</td>
+      <td>${d.open.toFixed(2)}</td>
+      <td>${d.high.toFixed(2)}</td>
+      <td>${d.low.toFixed(2)}</td>
+      <td class="${isUp ? 'td-up' : 'td-down'}">${d.close.toFixed(2)}</td>
+      <td class="${d.change >= 0 ? 'td-up' : 'td-down'}">${d.change >= 0 ? '▲' : '▼'} ${Math.abs(d.change).toFixed(2)}</td>
+      <td>${d.volume.toLocaleString()}</td>
+      <td class="td-ma5">${d.ma5 ? d.ma5.toFixed(2) : '—'}</td>
+      <td class="td-ma20">${d.ma20 ? d.ma20.toFixed(2) : '—'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('btnQuery').addEventListener('click', doQuery);
+document.getElementById('stockCode').addEventListener('keydown', e => { if (e.key === 'Enter') doQuery(); });
+
+document.getElementById('btnDownload').addEventListener('click', () => {
+  if (currentData.length === 0) { showToast('尚無資料可下載', 'error'); return; }
+  const code = document.getElementById('stockCode').value;
+  let csv = '\uFEFF日期,開盤,最高,最低,收盤,漲跌,成交量(張),MA5,MA20\n';
+  currentData.forEach(d => {
+    csv += [d.date, d.open.toFixed(2), d.high.toFixed(2), d.low.toFixed(2), d.close.toFixed(2),
+            d.change.toFixed(2), d.volume, d.ma5?.toFixed(2)||'', d.ma20?.toFixed(2)||''].join(',') + '\n';
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+  a.download = `${code}_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  showToast('CSV 已下載', 'success');
+});
+
+// 初始載入
+updateCacheInfo();
+doQuery();
+</script>
+</body>
+</html>
